@@ -45,7 +45,55 @@ impl StateMachine for AccountedCurrency {
     type Transition = AccountingTransaction;
 
     fn next_state(starting_state: &Balances, t: &AccountingTransaction) -> Balances {
-        todo!("Exercise 1")
+        match t {
+            AccountingTransaction::Mint { minter, amount } => {
+                let mut next = starting_state.clone();
+                if *amount > 0 {
+                    next.entry(*minter)
+                        .and_modify(|balance| *balance += amount)
+                        .or_insert(*amount);
+                }
+                next
+            }
+            AccountingTransaction::Burn { burner, amount } => {
+                let mut next = starting_state.clone();
+                let remaining = next
+                    .entry(*burner)
+                    .and_modify(|balance| *balance = balance.saturating_sub(*amount))
+                    .or_default();
+                if *remaining == 0 {
+                    next.remove(burner);
+                }
+                next
+            }
+            AccountingTransaction::Transfer {
+                sender,
+                receiver,
+                amount,
+            } => {
+                if starting_state
+                    .get(sender)
+                    .is_some_and(|balance| balance >= amount)
+                {
+                    let after_burn = Self::next_state(
+                        starting_state,
+                        &AccountingTransaction::Burn {
+                            burner: *sender,
+                            amount: *amount,
+                        },
+                    );
+                    Self::next_state(
+                        &after_burn,
+                        &AccountingTransaction::Mint {
+                            minter: *receiver,
+                            amount: *amount,
+                        },
+                    )
+                } else {
+                    starting_state.clone()
+                }
+            }
+        }
     }
 }
 
